@@ -1,0 +1,1776 @@
+--[[
+╔══════════════════════════════════════════╗
+║        W  O  Q  U  E  D                 ║
+║   Murder Mystery 2 Client • v1.6        ║
+║   Toggle: [Insert] | Tap W button       ║
+╚══════════════════════════════════════════╝
+]]
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local LP               = Players.LocalPlayer
+local Cam              = workspace.CurrentCamera
+
+-- ═══════════════════════════════════════════
+--        EXTERNAL ASSETS  CONFIG
+-- ═══════════════════════════════════════════
+-- Эмоция "Rampage Dance 🔥" из share-ссылки (ID сверен по превью).
+-- Каталожная эмоция (55 R$): играет, если куплена; если нет —
+-- автоматически берётся бесплатный запасной танец.
+local EMOTE_ID       = 92849748107049
+local EMOTE_FALLBACK = 507771019
+-- Бабочка из тулбокса (public domain): берётся первая загрузившаяся.
+-- Если ни одна не загрузилась — остаётся встроенный процедурный нож.
+-- 980223916  = CS:GO Butterfly Knife
+-- 6463748800 = Viewmodel Butterfly Knife Jade Dream
+-- 1476210191 = Butterfly Knife (Mesh)
+local KNIFE_IDS = {980223916, 6463748800, 1476210191}
+local KNIFE_ROT = CFrame.Angles(0, 0, 0)  -- подстройка разворота модельки ножа
+
+-- ═══════════════════════════════════════════
+--          RESPONSIVE LAYOUT DETECTION
+-- ═══════════════════════════════════════════
+local VP     = Cam.ViewportSize
+local MOBILE = VP.X < 650
+local WW     = MOBILE and math.floor(VP.X * 0.96) or 710
+local WH     = MOBILE and math.floor(VP.Y * 0.78) or 476
+local SW     = MOBILE and 108 or 212
+local HDR_H  = MOBILE and 46  or 52
+local MOD_H  = MOBILE and 46  or 40
+local FS_B   = MOBILE and 11  or 13
+local FS_S   = MOBILE and 9   or 10
+local FS_H   = MOBILE and 12  or 14
+local COLS   = MOBILE and 1   or 2
+local CAT_H  = MOBILE and 38  or 42
+local FBTN_SZ= MOBILE and 52  or 46
+
+-- ═══════════════════════════════════════════
+--                  COLORS
+-- ═══════════════════════════════════════════
+local C = {
+    bg       = Color3.fromRGB(14, 14, 20),
+    sidebar  = Color3.fromRGB(19, 19, 26),
+    content  = Color3.fromRGB(12, 12, 18),
+    header   = Color3.fromRGB(21, 21, 29),
+    modBg    = Color3.fromRGB(23, 23, 32),
+    modHover = Color3.fromRGB(30, 30, 44),
+    modOn    = Color3.fromRGB(27, 27, 38),
+    catActive= Color3.fromRGB(27, 27, 38),
+    catHover = Color3.fromRGB(24, 24, 34),
+    text     = Color3.fromRGB(210, 210, 228),
+    textDim  = Color3.fromRGB(130, 130, 150),
+    textOff  = Color3.fromRGB(70,  70,  88),
+    border   = Color3.fromRGB(35,  35,  50),
+    accent   = Color3.fromRGB(255, 255, 255),
+    blue     = Color3.fromRGB(80,  140, 255),
+    red      = Color3.fromRGB(255, 70,  70),
+    green    = Color3.fromRGB(80,  220, 120),
+    orange   = Color3.fromRGB(255, 165, 60),
+    purple   = Color3.fromRGB(180, 100, 255),
+    teal     = Color3.fromRGB(80,  200, 200),
+    floatBg  = Color3.fromRGB(26,  26,  36),
+}
+
+-- ═══════════════════════════════════════════
+--             MODULE DEFINITIONS
+-- ═══════════════════════════════════════════
+local MODULES = {
+    {id="silentaim",   name="SilentAim",   cat="Combat",   enabled=false,
+     col=C.blue,   hasSet=true,  set={fov=150, showFov=true}},
+    {id="antiaim",     name="AntiAim",     cat="Combat",   enabled=false,
+     col=C.red,    hasSet=false},
+    {id="autoshoot",   name="AutoShoot",   cat="Combat",   enabled=false,
+     col=C.orange, hasSet=false},
+    {id="bunnyhop",    name="BunnyHop",    cat="Movement", enabled=false,
+     col=C.green,  hasSet=false},
+    {id="emote",       name="Emote",       cat="Movement", enabled=false,
+     col=C.green,  hasSet=false},
+    {id="esp",         name="ESP",         cat="Visuals",  enabled=false,
+     col=C.accent, hasSet=false},
+    {id="shoottrails", name="ShootTrails", cat="Visuals",  enabled=false,
+     col=C.purple, hasSet=false},
+    {id="cspov",       name="CsPov",       cat="Visuals",  enabled=false,
+     col=C.teal,   hasSet=false},
+    {id="watermark",   name="Watermark",   cat="HUD",      enabled=true,
+     col=C.accent, hasSet=false},
+    {id="bindshud",    name="BindsHUD",    cat="HUD",      enabled=true,
+     col=C.accent, hasSet=false},
+    {id="speedhud",    name="SpeedHUD",    cat="HUD",      enabled=true,
+     col=C.green,  hasSet=false},
+}
+local MOD = {}
+for _, m in ipairs(MODULES) do MOD[m.id] = m end
+
+local CATS     = {"Combat", "Movement", "Visuals", "HUD"}
+local CAT_ICON = {Combat="⚔", Movement="⇾", Visuals="◈", HUD="▦"}
+local CAT_DESC = {
+    Combat  = "Боевые функции",
+    Movement= "Управление движением",
+    Visuals = "Визуальные эффекты",
+    HUD     = "Интерфейс и дисплей",
+}
+
+-- ═══════════════════════════════════════════
+--                  STATE
+-- ═══════════════════════════════════════════
+local S = {
+    open      = false,
+    animating = false,
+    cat       = "Combat",
+    -- AntiAim
+    aaAngle   = 0,
+    aaPaused  = false,
+    -- SilentAim
+    saTarget  = nil,
+    -- ShootTrails
+    trails    = {},
+    -- CsPov
+    vmBobT    = 0,
+    vmBobX    = 0,
+    vmBobY    = 0,
+    inspecting= false,
+    -- FPS
+    fpsCount  = 0,
+    fpsTimer  = tick(),
+    fps       = 0,
+    -- BunnyHop
+    bhopTimer = 0,
+    bhopBV    = nil,
+    bhopSpeed = 0,
+    bhopLandT = 0,
+    bhopAir   = false,
+    -- CsPov / AntiAim extras
+    activeVM  = "knife",
+    swayX     = 0,
+    lastYaw   = nil,
+    aaNeckC0  = nil,
+    aaWaistC0 = nil,
+    vmKnifeModel = nil,
+    knifeExternal = false,
+    emoteTrack   = nil,
+    emoteLastTry = 0,
+    emoteDead    = false,
+}
+
+local HAS_DRAW = false
+pcall(function()
+    local t = Drawing.new("Text"); t:Remove(); HAS_DRAW = true
+end)
+
+-- ═══════════════════════════════════════════
+--                UTILITIES
+-- ═══════════════════════════════════════════
+local function newI(cls, props, par)
+    local o = Instance.new(cls)
+    for k, v in pairs(props or {}) do o[k] = v end
+    if par then o.Parent = par end
+    return o
+end
+local function corner(p, r)
+    return newI("UICorner", {CornerRadius = UDim.new(0, r or 6)}, p)
+end
+local function stroke(p, col, th)
+    return newI("UIStroke", {
+        Color = col or C.border, Thickness = th or 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, p)
+end
+local function tw(o, t, props, es, ed)
+    TweenService:Create(o, TweenInfo.new(
+        t or 0.15,
+        es or Enum.EasingStyle.Quad,
+        ed or Enum.EasingDirection.Out
+    ), props):Play()
+end
+local function getChar() return LP.Character end
+local function getHRP()
+    local c = getChar(); return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function getHum()
+    local c = getChar(); return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function isMurd(pl)
+    local c = pl.Character; if not c then return false end
+    if c:FindFirstChild("Knife") then return true end
+    local b = pl:FindFirstChild("Backpack")
+    return b and b:FindFirstChild("Knife") ~= nil
+end
+local function isSher(pl)
+    local c = pl.Character; if not c then return false end
+    if c:FindFirstChild("Gun") then return true end
+    local b = pl:FindFirstChild("Backpack")
+    return b and b:FindFirstChild("Gun") ~= nil
+end
+
+-- ═══════════════════════════════════════════
+--     DRAG HELPER (mouse + touch)
+-- ═══════════════════════════════════════════
+local function makeDraggable(frame, handleFrame)
+    local handle = handleFrame or frame
+    local d, s, p = false, nil, nil
+    handle.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            d = true; s = inp.Position; p = frame.Position
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            d = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if d and (inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            local delta = inp.Position - s
+            frame.Position = UDim2.new(
+                p.X.Scale, p.X.Offset + delta.X,
+                p.Y.Scale, p.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--           SCREEN GUI  +  FLOAT BUTTON
+-- ═══════════════════════════════════════════
+local SG = newI("ScreenGui", {
+    Name = "Woqued", ResetOnSpawn = false,
+    DisplayOrder = 999, IgnoreGuiInset = true,
+})
+pcall(function() SG.Parent = game:GetService("CoreGui") end)
+if not SG.Parent then SG.Parent = LP.PlayerGui end
+
+local floatBtn = newI("TextButton", {
+    Size            = UDim2.new(0, FBTN_SZ, 0, FBTN_SZ),
+    Position        = UDim2.new(0, 14, 0.5, -FBTN_SZ/2),
+    BackgroundColor3= C.floatBg,
+    BorderSizePixel = 0,
+    Text            = "W",
+    TextColor3      = C.text,
+    TextSize        = MOBILE and 20 or 22,
+    Font            = Enum.Font.GothamBold,
+    AutoButtonColor = false,
+    Active          = true,
+}, SG)
+corner(floatBtn, 10)
+stroke(floatBtn, C.border)
+floatBtn.MouseEnter:Connect(function()
+    tw(floatBtn, 0.12, {BackgroundColor3 = Color3.fromRGB(38, 38, 52)})
+end)
+floatBtn.MouseLeave:Connect(function()
+    tw(floatBtn, 0.12, {BackgroundColor3 = C.floatBg})
+end)
+
+-- ── Inspect button (CsPov): tap = knife inspect, drag = reposition ──
+local doInspect  -- assigned later, in the CsPov viewmodel section
+local inspectBtn = newI("TextButton", {
+    Size             = UDim2.new(0, FBTN_SZ, 0, FBTN_SZ),
+    Position         = UDim2.new(0, 14, 0.5, FBTN_SZ/2 + 12),
+    BackgroundColor3 = C.floatBg,
+    BorderSizePixel  = 0,
+    Text             = "🔪",
+    TextColor3       = C.text,
+    TextSize         = MOBILE and 18 or 20,
+    Font             = Enum.Font.GothamBold,
+    AutoButtonColor  = false,
+    Active           = true,
+    Visible          = false,
+}, SG)
+corner(inspectBtn, 10)
+stroke(inspectBtn, C.border)
+inspectBtn.MouseEnter:Connect(function()
+    tw(inspectBtn, 0.12, {BackgroundColor3 = Color3.fromRGB(38, 38, 52)})
+end)
+inspectBtn.MouseLeave:Connect(function()
+    tw(inspectBtn, 0.12, {BackgroundColor3 = C.floatBg})
+end)
+do
+    local d, s, p, moved = false, nil, nil, false
+    inspectBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            d = true; moved = false; s = inp.Position; p = inspectBtn.Position
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if d and (inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            d = false
+            if not moved then doInspect() end
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if d and (inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            local delta = inp.Position - s
+            if delta.Magnitude > 6 then
+                moved = true
+                inspectBtn.Position = UDim2.new(
+                    p.X.Scale, p.X.Offset + delta.X,
+                    p.Y.Scale, p.Y.Offset + delta.Y
+                )
+            end
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--               MAIN WINDOW
+-- ═══════════════════════════════════════════
+local toggleMenu
+local WIN_POS = UDim2.new(0.5, -WW/2, 0.5, -WH/2)
+
+local win = newI("Frame", {
+    Size             = UDim2.new(0, WW, 0, WH),
+    Position         = WIN_POS,
+    BackgroundColor3 = C.bg,
+    BorderSizePixel  = 0,
+    Visible          = false,
+    ClipsDescendants = true,
+}, SG)
+corner(win, 10)
+stroke(win, C.border)
+
+-- ── Header ──────────────────────────────────
+local hdr = newI("Frame", {
+    Size             = UDim2.new(1, 0, 0, HDR_H),
+    BackgroundColor3 = C.header,
+    BorderSizePixel  = 0,
+}, win)
+newI("Frame", {
+    Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
+    BackgroundColor3 = C.border, BorderSizePixel = 0,
+}, hdr)
+
+local logoSz = MOBILE and 28 or 34
+local logoBox = newI("TextLabel", {
+    Size             = UDim2.new(0, logoSz, 0, logoSz),
+    Position         = UDim2.new(0, 10, 0.5, -logoSz/2),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel  = 0,
+    Text             = "W",
+    TextColor3       = C.bg,
+    TextSize         = MOBILE and 14 or 18,
+    Font             = Enum.Font.GothamBold,
+    TextXAlignment   = Enum.TextXAlignment.Center,
+    TextYAlignment   = Enum.TextYAlignment.Center,
+}, hdr)
+corner(logoBox, 7)
+
+newI("TextLabel", {
+    Size = UDim2.new(0, 90, 0, 17),
+    Position = UDim2.new(0, logoSz + 14, 0.5, -17),
+    BackgroundTransparency = 1,
+    Text = "Woqued", TextColor3 = C.text,
+    TextSize = FS_H, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, hdr)
+newI("TextLabel", {
+    Size = UDim2.new(0, 90, 0, 12),
+    Position = UDim2.new(0, logoSz + 14, 0.5, 2),
+    BackgroundTransparency = 1,
+    Text = "MM2  v1.6", TextColor3 = C.textDim,
+    TextSize = FS_S, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, hdr)
+
+local hdrCatTitle = newI("TextLabel", {
+    Size = UDim2.new(0, 180, 0, 17),
+    Position = UDim2.new(0, SW + 10, 0.5, -17),
+    BackgroundTransparency = 1,
+    Text = "Combat", TextColor3 = C.text,
+    TextSize = FS_H, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, hdr)
+local hdrCatDesc = newI("TextLabel", {
+    Size = UDim2.new(0, 220, 0, 12),
+    Position = UDim2.new(0, SW + 10, 0.5, 2),
+    BackgroundTransparency = 1,
+    Text = CAT_DESC["Combat"], TextColor3 = C.textDim,
+    TextSize = FS_S, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, hdr)
+
+if not MOBILE then
+    newI("TextLabel", {
+        Size = UDim2.new(0, 180, 1, 0),
+        Position = UDim2.new(1, -188, 0, 0),
+        BackgroundTransparency = 1,
+        Text = LP.Name .. "  ·  Woqued",
+        TextColor3 = C.textDim, TextSize = 10, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        TextYAlignment = Enum.TextYAlignment.Center,
+    }, hdr)
+end
+
+-- ── Body ────────────────────────────────────
+local body = newI("Frame", {
+    Size = UDim2.new(1, 0, 1, -HDR_H),
+    Position = UDim2.new(0, 0, 0, HDR_H),
+    BackgroundTransparency = 1,
+}, win)
+
+-- ═══════════════════════════════════════════
+--                 SIDEBAR
+-- ═══════════════════════════════════════════
+local sidebar = newI("Frame", {
+    Size = UDim2.new(0, SW, 1, 0),
+    BackgroundColor3 = C.sidebar,
+    BorderSizePixel  = 0,
+}, body)
+newI("Frame", {
+    Size = UDim2.new(0, 1, 1, 0), Position = UDim2.new(1, -1, 0, 0),
+    BackgroundColor3 = C.border, BorderSizePixel = 0,
+}, sidebar)
+
+local searchH = MOBILE and 0 or 46
+local catScroll = newI("ScrollingFrame", {
+    Size = UDim2.new(1, 0, 1, -searchH),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 2,
+    ScrollBarImageColor3 = C.border,
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(0, 0, 0, 0),
+}, sidebar)
+newI("UIListLayout", {
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Padding = UDim.new(0, MOBILE and 2 or 3)
+}, catScroll)
+newI("UIPadding", {
+    PaddingTop   = UDim.new(0, 6),
+    PaddingLeft  = UDim.new(0, 4),
+    PaddingRight = UDim.new(0, 4),
+    PaddingBottom= UDim.new(0, 4),
+}, catScroll)
+
+-- Search bar (desktop only)
+if not MOBILE then
+    local searchBar = newI("Frame", {
+        Size = UDim2.new(1, 0, 0, 46),
+        Position = UDim2.new(0, 0, 1, -46),
+        BackgroundColor3 = C.sidebar,
+        BorderSizePixel = 0,
+    }, sidebar)
+    newI("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = C.border, BorderSizePixel = 0,
+    }, searchBar)
+    local searchWrap = newI("Frame", {
+        Size = UDim2.new(1, -16, 0, 28),
+        Position = UDim2.new(0, 8, 0.5, -14),
+        BackgroundColor3 = C.modBg, BorderSizePixel = 0,
+    }, searchBar)
+    corner(searchWrap, 6); stroke(searchWrap, C.border)
+    newI("TextLabel", {
+        Size = UDim2.new(0, 20, 1, 0), Position = UDim2.new(0, 4, 0, 0),
+        BackgroundTransparency = 1, Text = "⌕",
+        TextSize = 14, TextColor3 = C.textOff, Font = Enum.Font.GothamBold,
+    }, searchWrap)
+    newI("TextBox", {
+        Size = UDim2.new(1, -26, 1, 0), Position = UDim2.new(0, 22, 0, 0),
+        BackgroundTransparency = 1,
+        PlaceholderText = "Search...", PlaceholderColor3 = C.textOff,
+        Text = "", TextColor3 = C.text, TextSize = 12, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false,
+    }, searchWrap)
+end
+
+-- ═══════════════════════════════════════════
+--               CONTENT AREA
+-- ═══════════════════════════════════════════
+local contentArea = newI("Frame", {
+    Size = UDim2.new(1, -SW, 1, 0),
+    Position = UDim2.new(0, SW, 0, 0),
+    BackgroundColor3 = C.content,
+    BorderSizePixel = 0,
+}, body)
+local contentScroll = newI("ScrollingFrame", {
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 3,
+    ScrollBarImageColor3 = C.border,
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(0, 0, 0, 0),
+}, contentArea)
+newI("UIPadding", {
+    PaddingTop = UDim.new(0, 8),
+    PaddingLeft = UDim.new(0, 8),
+    PaddingRight = UDim.new(0, 8),
+    PaddingBottom = UDim.new(0, 8),
+}, contentScroll)
+
+-- Responsive grid: 1 column on mobile, 2 on desktop
+newI("UIGridLayout", {
+    CellSize = COLS == 1
+        and UDim2.new(1, 0, 0, MOD_H)
+        or  UDim2.new(0.5, -6, 0, MOD_H),
+    CellPadding         = UDim2.new(0, 8, 0, 6),
+    SortOrder           = Enum.SortOrder.LayoutOrder,
+    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+}, contentScroll)
+
+-- ═══════════════════════════════════════════
+--            CATEGORY BUTTONS
+-- ═══════════════════════════════════════════
+local catBtns   = {}
+local modBtns   = {}
+local settingsPop = nil
+local buildModules
+local onToggle
+
+local function switchCat(newCat)
+    if newCat == S.cat then return end
+    local old = catBtns[S.cat]
+    if old then
+        tw(old.btn, 0.12, {BackgroundColor3 = C.sidebar})
+        tw(old.border, 0.12, {BackgroundTransparency = 1})
+        old.lbl.Font = Enum.Font.Gotham
+        old.lbl.TextColor3 = C.textDim
+        old.icon.TextColor3 = C.textDim
+    end
+    S.cat = newCat
+    local n = catBtns[newCat]
+    if n then
+        tw(n.btn, 0.12, {BackgroundColor3 = C.catActive})
+        tw(n.border, 0.12, {BackgroundTransparency = 0})
+        n.lbl.Font = Enum.Font.GothamBold
+        n.lbl.TextColor3 = C.text
+        n.icon.TextColor3 = C.text
+    end
+    hdrCatTitle.Text = newCat
+    hdrCatDesc.Text  = CAT_DESC[newCat] or ""
+    buildModules()
+end
+
+for i, cat in ipairs(CATS) do
+    local isAct = (cat == S.cat)
+    local btn = newI("TextButton", {
+        Size = UDim2.new(1, 0, 0, CAT_H),
+        BackgroundColor3 = isAct and C.catActive or C.sidebar,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+        LayoutOrder = i,
+    }, catScroll)
+    corner(btn, 6)
+
+    local bord = newI("Frame", {
+        Size = UDim2.new(0, 3, 0.6, 0), Position = UDim2.new(0, 0, 0.2, 0),
+        BackgroundColor3 = C.accent, BorderSizePixel = 0,
+        BackgroundTransparency = isAct and 0 or 1,
+    }, btn)
+    corner(bord, 2)
+
+    local iconOff = MOBILE and 8 or 12
+    local icon = newI("TextLabel", {
+        Size = UDim2.new(0, 20, 1, 0), Position = UDim2.new(0, iconOff, 0, 0),
+        BackgroundTransparency = 1,
+        Text = CAT_ICON[cat] or "•",
+        TextColor3 = isAct and C.text or C.textDim,
+        TextSize = MOBILE and 12 or 14, Font = Enum.Font.GothamBold,
+    }, btn)
+
+    local lblOff = MOBILE and 32 or 38
+    local lbl = newI("TextLabel", {
+        Size = UDim2.new(1, -(lblOff + 4), 1, 0), Position = UDim2.new(0, lblOff, 0, 0),
+        BackgroundTransparency = 1,
+        Text = cat, TextColor3 = isAct and C.text or C.textDim,
+        TextSize = FS_B, Font = isAct and Enum.Font.GothamBold or Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, btn)
+
+    catBtns[cat] = {btn = btn, border = bord, icon = icon, lbl = lbl}
+    btn.MouseButton1Click:Connect(function() switchCat(cat) end)
+    btn.MouseEnter:Connect(function()
+        if cat ~= S.cat then tw(btn, 0.1, {BackgroundColor3 = C.catHover}) end
+    end)
+    btn.MouseLeave:Connect(function()
+        if cat ~= S.cat then tw(btn, 0.1, {BackgroundColor3 = C.sidebar}) end
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--     SETTINGS POPUP  (SilentAim)
+-- ═══════════════════════════════════════════
+local function openSettingsFor(m)
+    if settingsPop then settingsPop:Destroy() end
+    if m.id ~= "silentaim" then return end
+    local popW, popH = 234, 116
+    settingsPop = newI("Frame", {
+        Size = UDim2.new(0, popW, 0, popH),
+        Position = UDim2.new(0.5, -popW/2, 0.5, -popH/2),
+        BackgroundColor3 = C.header, BorderSizePixel = 0, ZIndex = 10,
+    }, contentArea)
+    corner(settingsPop, 8); stroke(settingsPop, C.border)
+    newI("TextLabel", {
+        Size = UDim2.new(1, -32, 0, 30), Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1, Text = "SilentAim Settings",
+        TextColor3 = C.text, TextSize = 12, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
+        ZIndex = 10,
+    }, settingsPop)
+    local closeBtn = newI("TextButton", {
+        Size = UDim2.new(0, 22, 0, 22), Position = UDim2.new(1, -26, 0, 4),
+        BackgroundColor3 = C.red, BorderSizePixel = 0,
+        Text = "✕", TextColor3 = C.accent, TextSize = 11,
+        Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 10,
+    }, settingsPop)
+    corner(closeBtn, 5)
+    closeBtn.MouseButton1Click:Connect(function()
+        settingsPop:Destroy(); settingsPop = nil
+    end)
+    newI("Frame", {
+        Size = UDim2.new(1, -24, 0, 1), Position = UDim2.new(0, 12, 0, 30),
+        BackgroundColor3 = C.border, BorderSizePixel = 0, ZIndex = 10,
+    }, settingsPop)
+    newI("TextLabel", {
+        Size = UDim2.new(0, 90, 0, 24), Position = UDim2.new(0, 12, 0, 38),
+        BackgroundTransparency = 1, Text = "FOV Radius",
+        TextColor3 = C.textDim, TextSize = 11, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 10,
+    }, settingsPop)
+    local fovVal = newI("TextLabel", {
+        Size = UDim2.new(0, 44, 0, 24), Position = UDim2.new(0, 112, 0, 38),
+        BackgroundTransparency = 1, Text = tostring(m.set.fov),
+        TextColor3 = C.text, TextSize = 12, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 10,
+    }, settingsPop)
+    local function mkAdjBtn(label, xOff, action)
+        local b = newI("TextButton", {
+            Size = UDim2.new(0, 26, 0, 24), Position = UDim2.new(0, xOff, 0, 38),
+            BackgroundColor3 = C.modBg, BorderSizePixel = 0,
+            Text = label, TextColor3 = C.text, TextSize = 15,
+            Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 10,
+        }, settingsPop)
+        corner(b, 5)
+        b.MouseButton1Click:Connect(function()
+            action(); fovVal.Text = tostring(m.set.fov)
+            if HAS_DRAW and fovCircle then fovCircle.Radius = m.set.fov end
+        end)
+        return b
+    end
+    mkAdjBtn("−", 158, function() m.set.fov = math.max(30,  m.set.fov - 10) end)
+    mkAdjBtn("+", 188, function() m.set.fov = math.min(500, m.set.fov + 10) end)
+    newI("TextLabel", {
+        Size = UDim2.new(0, 120, 0, 24), Position = UDim2.new(0, 12, 0, 70),
+        BackgroundTransparency = 1, Text = "Show FOV Circle",
+        TextColor3 = C.textDim, TextSize = 11, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 10,
+    }, settingsPop)
+    local fovToggle = newI("TextButton", {
+        Size = UDim2.new(0, 50, 0, 22), Position = UDim2.new(1, -62, 0, 71),
+        BackgroundColor3 = m.set.showFov and C.blue or C.modBg, BorderSizePixel = 0,
+        Text = m.set.showFov and "ON" or "OFF", TextColor3 = C.accent,
+        TextSize = 11, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 10,
+    }, settingsPop)
+    corner(fovToggle, 5)
+    fovToggle.MouseButton1Click:Connect(function()
+        m.set.showFov = not m.set.showFov
+        fovToggle.Text = m.set.showFov and "ON" or "OFF"
+        tw(fovToggle, 0.12, {BackgroundColor3 = m.set.showFov and C.blue or C.modBg})
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--             MODULE BUTTONS
+-- ═══════════════════════════════════════════
+local function refreshModBtn(m)
+    local r = modBtns[m.id]; if not r then return end
+    local on = m.enabled
+    tw(r.btn, 0.12, {BackgroundColor3 = on and C.modOn or C.modBg})
+    tw(r.bar, 0.12, {BackgroundTransparency = on and 0 or 1})
+    r.lbl.TextColor3 = on and C.text or C.textDim
+    r.lbl.Font = on and Enum.Font.GothamBold or Enum.Font.Gotham
+end
+
+buildModules = function()
+    for _, r in pairs(modBtns) do
+        if r.btn and r.btn.Parent then r.btn:Destroy() end
+    end
+    modBtns = {}
+    if settingsPop then settingsPop:Destroy(); settingsPop = nil end
+    local n = 0
+    for _, m in ipairs(MODULES) do
+        if m.cat == S.cat then
+            n = n + 1
+            local on = m.enabled
+            local btn = newI("TextButton", {
+                Size = UDim2.new(0, 1, 0, 1),
+                BackgroundColor3 = on and C.modOn or C.modBg,
+                BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+                LayoutOrder = n, ClipsDescendants = true,
+            }, contentScroll)
+            corner(btn, 7)
+            local bar = newI("Frame", {
+                Size = UDim2.new(0, 3, 0.65, 0), Position = UDim2.new(0, 0, 0.175, 0),
+                BackgroundColor3 = m.col or C.accent, BorderSizePixel = 0,
+                BackgroundTransparency = on and 0 or 1,
+            }, btn)
+            corner(bar, 2)
+            local gearReserve = m.hasSet and 38 or 20
+            local lbl = newI("TextLabel", {
+                Size = UDim2.new(1, -(gearReserve + 10), 1, 0),
+                Position = UDim2.new(0, 14, 0, 0),
+                BackgroundTransparency = 1,
+                Text = m.name,
+                TextColor3 = on and C.text or C.textDim,
+                TextSize = FS_B, Font = on and Enum.Font.GothamBold or Enum.Font.Gotham,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Center,
+            }, btn)
+            if m.hasSet then
+                local gear = newI("TextButton", {
+                    Size = UDim2.new(0, 28, 0, 28),
+                    Position = UDim2.new(1, -34, 0.5, -14),
+                    BackgroundColor3 = C.bg, BorderSizePixel = 0,
+                    Text = "⚙", TextColor3 = C.textDim,
+                    TextSize = 13, Font = Enum.Font.GothamBold,
+                    AutoButtonColor = false,
+                }, btn)
+                corner(gear, 5)
+                local mRef = m
+                gear.MouseButton1Click:Connect(function() openSettingsFor(mRef) end)
+                gear.MouseEnter:Connect(function() tw(gear, 0.1, {TextColor3 = C.text}) end)
+                gear.MouseLeave:Connect(function() tw(gear, 0.1, {TextColor3 = C.textDim}) end)
+            end
+            modBtns[m.id] = {btn = btn, bar = bar, lbl = lbl}
+            local mRef = m
+            btn.MouseButton1Click:Connect(function()
+                mRef.enabled = not mRef.enabled
+                refreshModBtn(mRef)
+                onToggle(mRef)
+            end)
+            btn.MouseEnter:Connect(function()
+                tw(btn, 0.1, {BackgroundColor3 = C.modHover})
+            end)
+            btn.MouseLeave:Connect(function()
+                tw(btn, 0.1, {BackgroundColor3 = mRef.enabled and C.modOn or C.modBg})
+            end)
+        end
+    end
+end
+buildModules()
+
+-- ═══════════════════════════════════════════
+--                 HUD FRAMES
+-- ═══════════════════════════════════════════
+
+-- ── Watermark ───────────────────────────────
+local wmFrame = newI("Frame", {
+    Size = UDim2.new(0, 220, 0, 56),
+    Position = UDim2.new(0, 10, 0, 10),
+    BackgroundColor3 = C.bg, BorderSizePixel = 0,
+    Visible = MOD.watermark.enabled,
+}, SG)
+corner(wmFrame, 8); stroke(wmFrame, C.border)
+local wmAccent = newI("Frame", {
+    Size = UDim2.new(0, 3, 0.7, 0), Position = UDim2.new(0, 0, 0.15, 0),
+    BackgroundColor3 = C.blue, BorderSizePixel = 0,
+}, wmFrame)
+corner(wmAccent, 2)
+newI("TextLabel", {
+    Size = UDim2.new(1, -14, 0, 22), Position = UDim2.new(0, 12, 0, 8),
+    BackgroundTransparency = 1, Text = "Woqued",
+    TextColor3 = C.text, TextSize = 13, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, wmFrame)
+local wmStatsLbl = newI("TextLabel", {
+    Size = UDim2.new(1, -14, 0, 14), Position = UDim2.new(0, 12, 0, 30),
+    BackgroundTransparency = 1, Text = "0 FPS  |  0ms",
+    TextColor3 = C.textDim, TextSize = 10, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, wmFrame)
+
+-- ── Speed HUD ───────────────────────────────
+local speedFrame = newI("Frame", {
+    Size = UDim2.new(0, 110, 0, 52),
+    Position = UDim2.new(0.5, -55, 1, -70),
+    BackgroundColor3 = C.bg, BorderSizePixel = 0,
+    Visible = MOD.speedhud.enabled,
+}, SG)
+corner(speedFrame, 8); stroke(speedFrame, C.border)
+local speedVal = newI("TextLabel", {
+    Size = UDim2.new(1, 0, 0.6, 0),
+    BackgroundTransparency = 1, Text = "0",
+    TextColor3 = C.green, TextSize = 24, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Center,
+    TextYAlignment = Enum.TextYAlignment.Bottom,
+}, speedFrame)
+newI("TextLabel", {
+    Size = UDim2.new(1, 0, 0.4, 0), Position = UDim2.new(0, 0, 0.6, 0),
+    BackgroundTransparency = 1, Text = "SPEED  ups",
+    TextColor3 = C.textDim, TextSize = 9, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Center,
+    TextYAlignment = Enum.TextYAlignment.Center,
+}, speedFrame)
+
+-- ── Binds HUD ───────────────────────────────
+local bindsFrame = newI("Frame", {
+    Size = UDim2.new(0, 160, 0, 36),
+    Position = UDim2.new(1, -170, 0, 10),
+    BackgroundColor3 = C.bg, BorderSizePixel = 0,
+    Visible = MOD.bindshud.enabled,
+}, SG)
+corner(bindsFrame, 8); stroke(bindsFrame, C.border)
+newI("TextLabel", {
+    Size = UDim2.new(1, -16, 0, 18), Position = UDim2.new(0, 8, 0, 4),
+    BackgroundTransparency = 1, Text = "▸ ACTIVE",
+    TextColor3 = C.textDim, TextSize = 9, Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+}, bindsFrame)
+local bindsListLbl = newI("TextLabel", {
+    Size = UDim2.new(1, -16, 0, 0), Position = UDim2.new(0, 8, 0, 20),
+    BackgroundTransparency = 1, Text = "No active modules",
+    TextColor3 = C.text, TextSize = 10, Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top,
+    AutomaticSize = Enum.AutomaticSize.Y,
+    TextWrapped = false,
+}, bindsFrame)
+
+local function updateBindsHUD()
+    if not MOD.bindshud.enabled then
+        bindsFrame.Visible = false; return
+    end
+    bindsFrame.Visible = true
+    local lines = {}
+    for _, m in ipairs(MODULES) do
+        if m.enabled and m.id ~= "watermark" and m.id ~= "bindshud" and m.id ~= "speedhud" then
+            table.insert(lines, "· " .. m.name)
+        end
+    end
+    bindsListLbl.Text = #lines > 0 and table.concat(lines, "\n") or "No active modules"
+    task.defer(function()
+        local h = bindsListLbl.TextBounds.Y
+        bindsFrame.Size = UDim2.new(0, 160, 0, 26 + h + 6)
+    end)
+end
+updateBindsHUD()
+
+-- ── Make all HUD draggable (mouse + touch) ──
+makeDraggable(wmFrame)
+makeDraggable(speedFrame)
+makeDraggable(bindsFrame)
+
+-- ═══════════════════════════════════════════
+--           DRAWING LAYER  (ESP / FOV)
+-- ═══════════════════════════════════════════
+local fovCircle = nil
+local espData   = {}
+
+if HAS_DRAW then
+    fovCircle = Drawing.new("Circle")
+    fovCircle.Radius   = MOD.silentaim.set.fov
+    fovCircle.Thickness= 1.5
+    fovCircle.Filled   = false
+    fovCircle.Visible  = false
+    fovCircle.Color    = Color3.fromRGB(255, 255, 255)
+    fovCircle.NumSides = 60
+end
+
+local function getOrCreateESP(pl)
+    if espData[pl] then return espData[pl] end
+    if not HAS_DRAW then return nil end
+    local d = {}
+    d.box = Drawing.new("Square")
+    d.box.Filled = false; d.box.Thickness = 1.5
+    d.box.Transparency = 1; d.box.Visible = false
+    d.name = Drawing.new("Text")
+    d.name.Size = 12; d.name.Center = true
+    d.name.Outline = true; d.name.OutlineColor = Color3.fromRGB(0, 0, 0)
+    d.name.Font = 2; d.name.Visible = false
+    espData[pl] = d
+    return d
+end
+local function cleanESP(pl)
+    local d = espData[pl]; if not d then return end
+    if d.box  then d.box:Remove()  end
+    if d.name then d.name:Remove() end
+    espData[pl] = nil
+end
+Players.PlayerRemoving:Connect(cleanESP)
+
+-- ═══════════════════════════════════════════
+--             SHOOT TRAILS
+-- ═══════════════════════════════════════════
+local function addTrail(from2D, to2D)
+    if not MOD.shoottrails.enabled or not HAS_DRAW then return end
+    local t = { startTime = tick(), duration = 0.65, lines = {} }
+    local cfg = {
+        {col=Color3.fromRGB(255,255,255), thick=1.2, alpha=1.00},
+        {col=Color3.fromRGB(255,120,120), thick=3.0, alpha=0.45},
+        {col=Color3.fromRGB(255, 60, 60), thick=6.0, alpha=0.18},
+        {col=Color3.fromRGB(255, 20, 20), thick=11,  alpha=0.07},
+    }
+    for _, c in ipairs(cfg) do
+        local l = Drawing.new("Line")
+        l.From = from2D; l.To = to2D
+        l.Color = c.col; l.Thickness = c.thick
+        l.Transparency = c.alpha; l.Visible = true
+        table.insert(t.lines, l)
+    end
+    table.insert(S.trails, t)
+end
+local function updateTrails()
+    if not HAS_DRAW then return end
+    local now, i = tick(), 1
+    local alphas = {1.00, 0.45, 0.18, 0.07}
+    while i <= #S.trails do
+        local t = S.trails[i]
+        local age = now - t.startTime
+        if age >= t.duration then
+            for _, l in ipairs(t.lines) do l:Remove() end
+            table.remove(S.trails, i)
+        else
+            local fade = 1 - (age / t.duration)
+            for j, l in ipairs(t.lines) do
+                l.Transparency = alphas[j] * fade
+            end
+            i = i + 1
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════
+--          CS POV  VIEWMODEL
+--   Full-screen hands (like real CS2/CSGO)
+--   butterfly knife + AWP (while AntiAim is on)
+-- ═══════════════════════════════════════════
+local vmFrame = newI("ViewportFrame", {
+    Size = UDim2.new(1, 0, 1, 0),          -- full screen, like CS2/CSGO viewmodel
+    Position = UDim2.new(0, 0, 0, 0),
+    BackgroundTransparency = 1,
+    LightDirection = Vector3.new(-0.6, -1, -1),
+    ImageColor3 = Color3.fromRGB(220, 220, 220),
+    ImageTransparency = 0,
+    Visible = false,
+}, SG)
+local vmCam = Instance.new("Camera")
+vmCam.FieldOfView = 70; vmCam.CFrame = CFrame.new(0, 0, 3)
+vmCam.Parent = vmFrame; vmFrame.CurrentCamera = vmCam
+local vmModel = Instance.new("Model"); vmModel.Parent = vmFrame
+
+local function mkVP(sz, col, mat)
+    local p = Instance.new("Part")
+    p.Size = sz; p.Color = col
+    p.Material = mat or Enum.Material.SmoothPlastic
+    p.CanCollide = false; p.Anchored = true; p.CastShadow = false
+    p.Parent = vmModel; return p
+end
+
+local gloveC    = Color3.fromRGB(28, 28, 33)
+local knifeDark = Color3.fromRGB(32, 32, 38)
+local bladeC    = Color3.fromRGB(208, 214, 224)
+local awpC      = Color3.fromRGB(74, 92, 62)
+local awpDark   = Color3.fromRGB(40, 44, 38)
+
+-- Arms: bigger and closer to the camera, enter from the bottom corners
+local vmRA = mkVP(Vector3.new(0.52, 0.52, 2.10), gloveC)
+local vmLA = mkVP(Vector3.new(0.46, 0.46, 1.80), gloveC)
+
+-- Butterfly knife: curved blade (3 chained segments) + swinging handles
+local vmPivot  = mkVP(Vector3.new(0.22, 0.16, 0.34), Color3.fromRGB(62, 62, 70), Enum.Material.Metal)
+local vmBlade  = mkVP(Vector3.new(0.07, 0.75, 0.30), bladeC,    Enum.Material.Metal)
+local vmBlade2 = mkVP(Vector3.new(0.07, 0.60, 0.26), bladeC,    Enum.Material.Metal)
+local vmTip    = mkVP(Vector3.new(0.07, 0.42, 0.18), bladeC,    Enum.Material.Metal)
+local vmH1     = mkVP(Vector3.new(0.13, 0.95, 0.26), knifeDark, Enum.Material.Metal)
+local vmH2     = mkVP(Vector3.new(0.13, 0.95, 0.26), knifeDark, Enum.Material.Metal)
+local vmLatch  = mkVP(Vector3.new(0.07, 0.20, 0.15), Color3.fromRGB(96, 96, 104), Enum.Material.Metal)
+
+-- AWP (shown while AntiAim is enabled)
+local vmAwpBody   = mkVP(Vector3.new(0.13, 0.20, 1.30), awpC,    Enum.Material.Metal)
+local vmAwpBarrel = mkVP(Vector3.new(0.07, 0.07, 1.15), awpDark, Enum.Material.Metal)
+local vmAwpScope  = mkVP(Vector3.new(0.11, 0.11, 0.55), awpDark, Enum.Material.Metal)
+local vmAwpLens   = mkVP(Vector3.new(0.14, 0.14, 0.10), Color3.fromRGB(30, 60, 80), Enum.Material.Glass)
+local vmAwpStock  = mkVP(Vector3.new(0.11, 0.26, 0.60), awpC,    Enum.Material.Metal)
+local vmAwpGrip   = mkVP(Vector3.new(0.09, 0.30, 0.14), awpDark, Enum.Material.Metal)
+local vmAwpMag    = mkVP(Vector3.new(0.09, 0.22, 0.30), awpDark, Enum.Material.Metal)
+local vmAwpBolt   = mkVP(Vector3.new(0.05, 0.05, 0.22), Color3.fromRGB(90, 90, 96), Enum.Material.Metal)
+
+local knifeParts = {vmPivot, vmBlade, vmBlade2, vmTip, vmH1, vmH2, vmLatch}
+local awpParts   = {vmAwpBody, vmAwpBarrel, vmAwpScope, vmAwpLens,
+                    vmAwpStock, vmAwpGrip, vmAwpMag, vmAwpBolt}
+for _, p in ipairs(awpParts) do p.Transparency = 1 end
+
+local function setActiveWeapon(w)
+    if S.activeVM == w then return end
+    S.activeVM = w
+    for _, p in ipairs(knifeParts) do
+        p.Transparency = (w == "knife" and not S.knifeExternal) and 0 or 1
+    end
+    for _, p in ipairs(awpParts)   do p.Transparency = (w == "awp")   and 0 or 1 end
+end
+
+-- Knife pose: parametric root CFrame + swing angle of each handle.
+-- Idle pose is like screenshot 2: blade leans up-left, handles down-right.
+local BL1, BL2, TIP_L, HD_L = 0.75, 0.60, 0.42, 0.95
+-- roll 55° = blade lies almost horizontally, tip up-left (like CS2)
+local rootIdle   = CFrame.new(0.50, -0.12, 0.66) * CFrame.Angles(math.rad(-4), 0, math.rad(55))
+local a1Idle     = math.rad(14)
+local a2Idle     = math.rad(-8)
+local rootVal    = Instance.new("CFrameValue")
+local swingVal   = Instance.new("NumberValue")
+local swing2Val  = Instance.new("NumberValue")
+rootVal.Value = rootIdle; swingVal.Value = a1Idle; swing2Val.Value = a2Idle
+
+local function applyKnifePose()
+    local root = rootVal.Value * CFrame.new(S.vmBobX or 0, S.vmBobY or 0, 0)
+    vmPivot.CFrame = root
+    -- curved blade: three chained segments
+    local j0 = root * CFrame.new(0, 0.10, 0)
+    vmBlade.CFrame = j0 * CFrame.new(0, BL1/2, 0)
+    local j1 = j0 * CFrame.new(0, BL1, 0) * CFrame.Angles(0, 0, math.rad(14))
+    vmBlade2.CFrame = j1 * CFrame.new(0, BL2/2, 0)
+    local j2 = j1 * CFrame.new(0, BL2, 0) * CFrame.Angles(0, 0, math.rad(16))
+    vmTip.CFrame = j2 * CFrame.new(0, TIP_L/2 - 0.04, 0) * CFrame.Angles(0, 0, math.rad(12))
+    -- handles swing around the pivot axis
+    vmH1.CFrame = root * CFrame.new(-0.115, 0, 0)
+                 * CFrame.Angles(swingVal.Value, 0, 0)
+                 * CFrame.new(0, -(HD_L/2 + 0.06), 0)
+    vmH2.CFrame = root * CFrame.new(0.115, 0, 0)
+                 * CFrame.Angles(swing2Val.Value, 0, 0)
+                 * CFrame.new(0, -(HD_L/2 + 0.06), 0)
+    vmLatch.CFrame = root * CFrame.new(0.115, 0, 0)
+                   * CFrame.Angles(swing2Val.Value, 0, 0)
+                   * CFrame.new(0, -(HD_L + 0.22), 0)
+    -- модель из тулбокса живёт в той же точке (тот же боб/свинг/осмотр)
+    if S.vmKnifeModel then
+        S.vmKnifeModel:PivotTo(root * KNIFE_ROT)
+    end
+end
+rootVal.Changed:Connect(applyKnifePose)
+swingVal.Changed:Connect(applyKnifePose)
+swing2Val.Changed:Connect(applyKnifePose)
+
+-- Загрузка бабочки из тулбокса (public domain): первая загрузившаяся
+-- заменяет процедурный нож. Чистка от скриптов/звуков, масштаб ~1.9.
+task.spawn(function()
+    local function tryLoad(id)
+        local ok, objs = pcall(game.GetObjects, game, "rbxassetid://" .. tostring(id))
+        if not ok or type(objs) ~= "table" or #objs == 0 then return nil end
+        for _, o in ipairs(objs) do
+            if o:IsA("Model") then return o end
+            if o:IsA("BasePart") then
+                local m = Instance.new("Model"); o.Parent = m; return m
+            end
+        end
+        return nil
+    end
+    for _, id in ipairs(KNIFE_IDS) do
+        local mdl = tryLoad(id)
+        if mdl then
+            for _, d in ipairs(mdl:GetDescendants()) do
+                if not d:IsA("BasePart") and not d:IsA("SpecialMesh")
+                   and not d:IsA("BlockMesh") and not d:IsA("CylinderMesh")
+                   and not d:IsA("Attachment") then
+                    d:Destroy()
+                end
+            end
+            for _, d in ipairs(mdl:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    d.Anchored = true
+                    d.CanCollide = false; d.CanTouch = false; d.CanQuery = false
+                    d.CastShadow = false
+                end
+            end
+            mdl.Parent = vmModel
+            local ext = mdl:GetExtentsSize()
+            local maxDim = math.max(ext.X, ext.Y, ext.Z)
+            if maxDim > 0 then mdl:ScaleTo(1.9 / maxDim) end
+            S.vmKnifeModel = mdl
+            S.knifeExternal = true
+            for _, p in ipairs(knifeParts) do p.Transparency = 1 end
+            break
+        end
+    end
+end)
+
+-- AWP pose: rifle from the bottom-right toward the center of the screen
+local awpIdle = CFrame.new(0.52, -0.48, 1.55)
+              * CFrame.Angles(math.rad(3), math.rad(6), math.rad(-8))
+local awpVal = Instance.new("CFrameValue")
+awpVal.Value = awpIdle
+
+local function applyAwpPose()
+    local root = awpVal.Value * CFrame.new(S.vmBobX or 0, S.vmBobY or 0, 0)
+    vmAwpBody.CFrame   = root * CFrame.new(0, 0, -0.65)
+    vmAwpBarrel.CFrame = root * CFrame.new(0, 0.02, -1.75)
+    vmAwpScope.CFrame  = root * CFrame.new(0, 0.20, -0.55)
+    vmAwpLens.CFrame   = root * CFrame.new(0, 0.20, -0.88)
+    vmAwpStock.CFrame  = root * CFrame.new(0, -0.03, 0.30)
+    vmAwpGrip.CFrame   = root * CFrame.new(0, -0.24, 0.10) * CFrame.Angles(math.rad(-15), 0, 0)
+    vmAwpMag.CFrame    = root * CFrame.new(0, -0.20, -0.45) * CFrame.Angles(math.rad(10), 0, 0)
+    vmAwpBolt.CFrame   = root * CFrame.new(0.11, 0.04, -0.10) * CFrame.Angles(0, 0, math.rad(20))
+end
+awpVal.Changed:Connect(applyAwpPose)
+
+-- Arms idle poses per weapon (forearms from the bottom corners)
+local armPoses = {
+    knife = {
+        RA = {center = Vector3.new(1.40, -1.45, 1.90), hand = Vector3.new(0.95, -0.50, 0.68)},
+        LA = {center = Vector3.new(-0.95, -1.70, 1.60), hand = Vector3.new(-0.48, -0.82, 0.68)},
+    },
+    awp = {
+        RA = {center = Vector3.new(1.05, -1.60, 2.10), hand = Vector3.new(0.55, -0.75, 1.62)},
+        LA = {center = Vector3.new(-0.85, -1.55, 1.70), hand = Vector3.new(0.40, -0.62, 0.66)},
+    },
+}
+local function setArmsIdle()
+    local pose = armPoses[S.activeVM] or armPoses.knife
+    local o = Vector3.new(S.vmBobX or 0, S.vmBobY or 0, 0)
+    vmRA.CFrame = CFrame.lookAt(pose.RA.center + o, pose.RA.hand + o)
+    vmLA.CFrame = CFrame.lookAt(pose.LA.center + o, pose.LA.hand + o)
+end
+
+local function setVMIdle()
+    rootVal.Value   = rootIdle
+    awpVal.Value    = awpIdle
+    swingVal.Value  = a1Idle
+    swing2Val.Value = a2Idle
+    S.vmBobT, S.vmBobX, S.vmBobY = 0, 0, 0
+    S.swayX = 0; S.lastYaw = nil
+    applyKnifePose()
+    applyAwpPose()
+    setArmsIdle()
+end
+setVMIdle()
+
+local function updateVMBob(dt)
+    local hrp = getHRP(); if not hrp then return end
+    local spd = hrp.Velocity.Magnitude
+
+    -- weapon sway: lags behind camera turns (like CS viewmodels)
+    local look = Cam.CFrame.LookVector
+    local yaw = math.atan2(look.X, look.Z)
+    if S.lastYaw then
+        local d = yaw - S.lastYaw
+        if d >  math.pi then d = d - math.pi * 2 end
+        if d < -math.pi then d = d + math.pi * 2 end
+        if not S.inspecting then
+            local target = math.clamp(d * 1.6, -0.055, 0.055)
+            S.swayX = S.swayX + (target - S.swayX) * math.min(dt * 10, 1)
+        else
+            S.swayX = S.swayX * math.max(1 - dt * 10, 0)
+        end
+    end
+    S.lastYaw = yaw
+
+    if spd > 2 and not S.inspecting then
+        S.vmBobT = S.vmBobT + dt * 8
+        S.vmBobX = math.sin(S.vmBobT) * 0.018 + S.swayX
+        S.vmBobY = -math.abs(math.sin(S.vmBobT * 0.5)) * 0.016
+    else
+        S.vmBobT = 0
+        S.vmBobX = S.swayX
+        S.vmBobY = 0
+    end
+    if not S.inspecting then setArmsIdle() end
+    applyKnifePose()
+    applyAwpPose()
+    local pitch = math.asin(math.clamp(Cam.CFrame.UpVector:Dot(Vector3.new(0,0,-1)),-1,1))
+    vmCam.CFrame = CFrame.new(0,0,3) * CFrame.Angles(pitch * 0.12, 0, 0)
+end
+
+-- Inspect animation (F / knife button):
+-- knife = raise with overshoot, full handle flip, side wrist roll,
+--         second handle flip while rolled, then back to idle
+-- AWP   = lift, 180° roll around the barrel, back
+doInspect = function()
+    if S.inspecting or not MOD.cspov.enabled then return end
+    S.inspecting = true
+    local TI = TweenInfo.new
+
+    if S.activeVM == "awp" then
+        local raise = awpIdle * CFrame.new(0, 0.18, -0.15)
+                    * CFrame.Angles(math.rad(8), math.rad(-6), math.rad(14))
+        TweenService:Create(awpVal, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Value = raise}):Play()
+        TweenService:Create(vmRA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {CFrame = CFrame.lookAt(Vector3.new(0.75, -1.05, 1.85), Vector3.new(0.40, -0.35, 1.35))}):Play()
+        task.delay(0.35, function()
+            TweenService:Create(awpVal, TI(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Value = raise * CFrame.Angles(math.rad(180), 0, 0)}):Play()
+        end)
+        task.delay(0.85, function()
+            TweenService:Create(awpVal, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Value = awpIdle}):Play()
+            TweenService:Create(vmRA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {CFrame = CFrame.lookAt(armPoses.awp.RA.center, armPoses.awp.RA.hand)}):Play()
+        end)
+        task.delay(1.20, function() S.inspecting = false end)
+        return
+    end
+
+    local raise = CFrame.new(0.08, -0.05, 0.60) * CFrame.Angles(math.rad(-4), 0, math.rad(24))
+    -- 1) raise the knife to the middle of the screen (slight overshoot)
+    TweenService:Create(rootVal, TI(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Value = raise}):Play()
+    TweenService:Create(vmRA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {CFrame = CFrame.lookAt(Vector3.new(0.45, -1.05, 1.35), Vector3.new(0.10, -0.55, 0.62))}):Play()
+    TweenService:Create(vmLA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {CFrame = CFrame.lookAt(Vector3.new(-0.65, -1.30, 1.45), Vector3.new(-0.30, -0.75, 0.70))}):Play()
+    -- 2) full flip of the first handle around the pivot
+    task.delay(0.34, function()
+        TweenService:Create(swingVal, TI(0.50, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+            {Value = a1Idle + math.pi * 2}):Play()
+    end)
+    -- 3) wrist roll: knife goes sideways
+    task.delay(0.90, function()
+        TweenService:Create(rootVal, TI(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+            {Value = raise * CFrame.Angles(0, 0, math.rad(-95))}):Play()
+    end)
+    -- 4) full flip of the second handle while rolled
+    task.delay(1.18, function()
+        TweenService:Create(swing2Val, TI(0.46, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+            {Value = a2Idle + math.pi * 2}):Play()
+    end)
+    -- 5) back to idle
+    task.delay(1.70, function()
+        swingVal.Value  = a1Idle
+        swing2Val.Value = a2Idle
+        TweenService:Create(rootVal, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {Value = rootIdle}):Play()
+        TweenService:Create(vmRA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {CFrame = CFrame.lookAt(armPoses.knife.RA.center, armPoses.knife.RA.hand)}):Play()
+        TweenService:Create(vmLA, TI(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            {CFrame = CFrame.lookAt(armPoses.knife.LA.center, armPoses.knife.LA.hand)}):Play()
+    end)
+    task.delay(2.05, function() S.inspecting = false end)
+end
+
+-- ═══════════════════════════════════════════
+--           SILENT AIM  HOOK
+-- ═══════════════════════════════════════════
+local function installSilentAim()
+    local ok = pcall(function()
+        local mt = getrawmetatable(game)
+        setreadonly(mt, false)
+        local oldNC = mt.__namecall
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if (MOD.silentaim.enabled or MOD.autoshoot.enabled) and S.saTarget then
+                if MOD.antiaim.enabled then
+                    S.aaPaused = true
+                    task.delay(0.22, function() S.aaPaused = false end)
+                end
+                if method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" then
+                    local args = {...}
+                    if typeof(args[1]) == "Ray" then
+                        local newDir = (S.saTarget.Position - args[1].Origin).Unit * 1000
+                        args[1] = Ray.new(args[1].Origin, newDir)
+                        return oldNC(self, unpack(args))
+                    end
+                elseif method == "Raycast" then
+                    local args = {...}
+                    if typeof(args[1]) == "Vector3" then
+                        args[2] = S.saTarget.Position - args[1]
+                        return oldNC(self, unpack(args))
+                    end
+                end
+            end
+            return oldNC(self, ...)
+        end)
+    end)
+    if not ok then warn("[Woqued] SilentAim hook unavailable") end
+end
+installSilentAim()
+
+-- ═══════════════════════════════════════════
+--     GUN EVENTS  (ShootTrails / AntiAim)
+-- ═══════════════════════════════════════════
+local function connectCharEvents(char)
+    char.ChildAdded:Connect(function(child)
+        if not child:IsA("Tool") or child.Name ~= "Gun" then return end
+        child.Activated:Connect(function()
+            if MOD.antiaim.enabled then
+                S.aaPaused = true
+                task.delay(0.22, function() S.aaPaused = false end)
+            end
+            if MOD.shoottrails.enabled and HAS_DRAW then
+                local handle = child:FindFirstChildWhichIsA("BasePart")
+                if handle then
+                    local s2d, vis = Cam:WorldToViewportPoint(handle.Position)
+                    if vis then
+                        local mousePos = UserInputService:GetMouseLocation()
+                        local ray = Cam:ScreenPointToRay(mousePos.X, mousePos.Y)
+                        local rp = RaycastParams.new()
+                        rp.FilterDescendantsInstances = {char}
+                        rp.FilterType = Enum.RaycastFilterType.Exclude
+                        local hit = workspace:Raycast(ray.Origin, ray.Direction * 500, rp)
+                        local endPos = hit and hit.Position or (ray.Origin + ray.Direction * 500)
+                        local e2d, _ = Cam:WorldToViewportPoint(endPos)
+                        addTrail(Vector2.new(s2d.X, s2d.Y), Vector2.new(e2d.X, e2d.Y))
+                    end
+                end
+            end
+        end)
+    end)
+end
+LP.CharacterAdded:Connect(function(char)
+    S.aaNeckC0, S.aaWaistC0 = nil, nil  -- new body: new joints
+    connectCharEvents(char)
+end)
+if LP.Character then connectCharEvents(LP.Character) end
+
+-- ═══════════════════════════════════════════
+--     EMOTE MODULE  (Rampage Dance 🔥)
+--   Локальный танец поверх ходьбы (Action-приоритет).
+-- ═══════════════════════════════════════════
+local function stopEmote()
+    if S.emoteTrack then
+        pcall(function() S.emoteTrack:Stop(0.15) end)
+        S.emoteTrack = nil
+    end
+end
+
+local function playEmoteTrack(animator, animId)
+    local track
+    local ok = pcall(function()
+        local a = Instance.new("Animation")
+        a.AnimationId = "rbxassetid://" .. tostring(animId)
+        track = animator:LoadAnimation(a)
+    end)
+    if not ok or not track then return false end
+    track.Priority = Enum.AnimationPriority.Action  -- играет даже в движении
+    track.Looped = true
+    S.emoteTrack = track
+    track:Play(0.15)
+    return true
+end
+
+local function startEmote()
+    local char = getChar(); if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator"); animator.Parent = hum
+    end
+    S.emoteLastTry = tick()
+    task.spawn(function()
+        -- основная эмоция из share-ссылки
+        if not playEmoteTrack(animator, EMOTE_ID) then S.emoteDead = true return end
+        local t0 = tick()
+        while S.emoteTrack and not S.emoteTrack.Loaded and tick() - t0 < 3 do
+            task.wait(0.1)
+        end
+        if not S.emoteTrack or S.emoteTrack.Loaded then return end
+        -- эмоция не загрузилась (не куплена) → бесплатный запасной танец
+        pcall(function() S.emoteTrack:Stop(0) end)
+        S.emoteTrack = nil
+        if not playEmoteTrack(animator, EMOTE_FALLBACK) then S.emoteDead = true return end
+        t0 = tick()
+        while S.emoteTrack and not S.emoteTrack.Loaded and tick() - t0 < 3 do
+            task.wait(0.1)
+        end
+        if S.emoteTrack and not S.emoteTrack.Loaded then
+            S.emoteDead = true
+            stopEmote()
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════
+--     ANTI AIM  HELPERS  (local head down)
+-- ═══════════════════════════════════════════
+local function getAaJoints(char)
+    return char:FindFirstChild("Neck", true), char:FindFirstChild("Waist", true)
+end
+
+local function applyAaHeadDown(char)
+    local neck, waist = getAaJoints(char)
+    if neck and neck:IsA("Motor6D") then
+        if not S.aaNeckC0 then S.aaNeckC0 = neck.C0 end
+        neck.C0 = S.aaNeckC0 * CFrame.Angles(math.rad(-85), 0, 0)
+    end
+    if waist and waist:IsA("Motor6D") then
+        if not S.aaWaistC0 then S.aaWaistC0 = waist.C0 end
+        waist.C0 = S.aaWaistC0 * CFrame.Angles(math.rad(-55), 0, 0)
+    end
+end
+
+local function restoreAaPose()
+    local char = getChar(); if not char then return end
+    local neck, waist = getAaJoints(char)
+    if neck and S.aaNeckC0 then neck.C0 = S.aaNeckC0 end
+    if waist and S.aaWaistC0 then waist.C0 = S.aaWaistC0 end
+    S.aaNeckC0, S.aaWaistC0 = nil, nil
+end
+
+-- ═══════════════════════════════════════════
+--          MODULE TOGGLE  HANDLER
+-- ═══════════════════════════════════════════
+onToggle = function(m)
+    updateBindsHUD()
+    if m.id == "cspov" then
+        if m.enabled then
+            LP.CameraMaxZoomDistance = 0.5
+            LP.CameraMinZoomDistance = 0.5
+            vmFrame.Visible = true
+            inspectBtn.Visible = true
+            setActiveWeapon(MOD.antiaim.enabled and not MOD.emote.enabled
+                                and "awp" or "knife")
+        else
+            LP.CameraMaxZoomDistance = 128
+            LP.CameraMinZoomDistance = 0.5
+            vmFrame.Visible = false; setVMIdle()
+            inspectBtn.Visible = false
+        end
+    elseif m.id == "watermark" then
+        wmFrame.Visible = m.enabled
+    elseif m.id == "bindshud" then
+        bindsFrame.Visible = m.enabled
+        if m.enabled then updateBindsHUD() end
+    elseif m.id == "speedhud" then
+        speedFrame.Visible = m.enabled
+    elseif m.id == "antiaim" then
+        if m.enabled then
+            if not MOD.emote.enabled then setActiveWeapon("awp") end
+        else
+            S.aaAngle = 0; S.aaPaused = false
+            restoreAaPose()
+            setActiveWeapon("knife")
+        end
+        applyKnifePose(); applyAwpPose()
+        if not S.inspecting then setArmsIdle() end
+    elseif m.id == "bunnyhop" then
+        if not m.enabled and S.bhopBV then
+            S.bhopBV:Destroy(); S.bhopBV = nil
+        end
+    elseif m.id == "emote" then
+        if m.enabled then
+            S.emoteDead = false
+            startEmote()
+            -- при эмоции AntiAim остаётся только кручение: без AWP и наклона
+            if MOD.antiaim.enabled then setActiveWeapon("knife") end
+        else
+            stopEmote()
+            if MOD.antiaim.enabled then setActiveWeapon("awp") end
+        end
+    elseif m.id == "esp" then
+        if not m.enabled then
+            for _, d in pairs(espData) do
+                if d.box  then d.box.Visible  = false end
+                if d.name then d.name.Visible = false end
+            end
+        end
+    elseif m.id == "silentaim" then
+        if fovCircle then fovCircle.Visible = m.enabled and m.set.showFov end
+    elseif m.id == "shoottrails" then
+        if not m.enabled then
+            for _, t in ipairs(S.trails) do
+                for _, l in ipairs(t.lines) do l:Remove() end
+            end
+            S.trails = {}
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════
+--         MENU TOGGLE  +  ANIMATION
+-- ═══════════════════════════════════════════
+toggleMenu = function()
+    if S.animating then return end
+    S.animating = true
+    if S.open then
+        local sz  = win.Size
+        local pos = win.Position
+        local cx  = pos.X.Offset + sz.X.Offset * 0.5
+        local cy  = pos.Y.Offset + sz.Y.Offset * 0.5
+        local ns  = UDim2.new(0, sz.X.Offset * 0.88, 0, sz.Y.Offset * 0.88)
+        local np  = UDim2.new(0, cx - ns.X.Offset * 0.5, 0, cy - ns.Y.Offset * 0.5)
+        local t = TweenService:Create(win,
+            TweenInfo.new(0.17, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Size = ns, Position = np}
+        )
+        t:Play()
+        t.Completed:Connect(function()
+            win.Visible = false
+            win.Size = UDim2.new(0, WW, 0, WH)
+            win.Position = WIN_POS
+            S.open = false; S.animating = false
+        end)
+    else
+        win.Size     = UDim2.new(0, WW * 0.88, 0, WH * 0.88)
+        win.Position = UDim2.new(0.5, -(WW * 0.88)/2, 0.5, -(WH * 0.88)/2)
+        win.Visible  = true
+        local t = TweenService:Create(win,
+            TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Size = UDim2.new(0, WW, 0, WH), Position = WIN_POS}
+        )
+        t:Play()
+        t.Completed:Connect(function()
+            S.open = true; S.animating = false
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════
+--     DRAG HANDLERS  (W button + window)
+-- ═══════════════════════════════════════════
+
+-- Float W button: tap = toggle, drag = reposition
+do
+    local d, s, p, moved = false, nil, nil, false
+    floatBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            d = true; moved = false; s = inp.Position; p = floatBtn.Position
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(inp)
+        if d and (inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            d = false
+            if not moved then toggleMenu() end
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if d and (inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch) then
+            local delta = inp.Position - s
+            if delta.Magnitude > 6 then
+                moved = true
+                floatBtn.Position = UDim2.new(
+                    p.X.Scale, p.X.Offset + delta.X,
+                    p.Y.Scale, p.Y.Offset + delta.Y
+                )
+            end
+        end
+    end)
+end
+
+-- Main window: drag by header bar
+makeDraggable(win, hdr)
+
+-- ═══════════════════════════════════════════
+--            MAIN  RENDER  LOOP
+-- ═══════════════════════════════════════════
+RunService.RenderStepped:Connect(function(dt)
+    -- FPS counter
+    S.fpsCount = S.fpsCount + 1
+    if tick() - S.fpsTimer >= 1 then
+        S.fps = S.fpsCount; S.fpsCount = 0; S.fpsTimer = tick()
+    end
+
+    local char = getChar()
+    local hrp  = getHRP()
+    local hum  = getHum()
+
+    -- ── AntiAim (upright spin + head bent down, local) ─
+    if MOD.antiaim.enabled and hrp then
+        if not S.aaPaused then
+            S.aaAngle = (S.aaAngle + 0.055) % (math.pi * 2)
+        end
+        -- yaw-only spin: pitching the HRP pushes the body into walls/ground
+        -- and physics flings the player across the map, so the downlook is
+        -- done purely via the neck/waist joints instead
+        hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, S.aaAngle, 0)
+        if MOD.emote.enabled then
+            -- эмоция вытесняет наклон вниз: разогнуть суставы и крутиться
+            if char and S.aaNeckC0 then restoreAaPose() end
+        elseif char then
+            applyAaHeadDown(char)
+        end
+        -- safety: kill physics fling velocity (bhop max is 60, falls < 200)
+        local v = hrp.AssemblyLinearVelocity
+        if v.Magnitude > 500 then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+
+    -- ── Emote: автоперезапуск после респавна / обрыва ─
+    if MOD.emote.enabled and not S.emoteDead
+       and tick() - (S.emoteLastTry or 0) > 3 then
+        local t = S.emoteTrack
+        if not t or not t.IsPlaying then startEmote() end
+    end
+
+    -- ── BunnyHop (no speed reset on landing, capped at 60) ─
+    if MOD.bunnyhop.enabled and hum and hrp then
+        local onGround = hum.FloorMaterial ~= Enum.Material.Air
+        local vel = hrp.AssemblyLinearVelocity
+        local hSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+        local moveDir = hum.MoveDirection
+
+        if not onGround then
+            -- airborne: remember speed (max 60) and keep accelerating
+            S.bhopAir = true
+            if hSpeed > (S.bhopSpeed or 0) then
+                S.bhopSpeed = math.min(hSpeed, 60)
+            end
+            if moveDir.Magnitude > 0 then
+                if not S.bhopBV then
+                    S.bhopBV = Instance.new("BodyVelocity")
+                    S.bhopBV.MaxForce = Vector3.new(1e5, 0, 1e5)
+                    S.bhopBV.P = 1e5
+                    S.bhopBV.Parent = hrp
+                end
+                local target = math.min(hSpeed + 1.4, 60)
+                S.bhopBV.Velocity = moveDir * target
+            else
+                if S.bhopBV then
+                    S.bhopBV:Destroy(); S.bhopBV = nil
+                end
+            end
+        else
+            if S.bhopAir then
+                S.bhopAir = false
+                S.bhopLandT = tick()
+            end
+            -- right after landing: jump instantly and keep pushing at the
+            -- stored speed, so ground friction cannot reset it
+            local justLanded = (tick() - (S.bhopLandT or 0)) < 0.20
+            if moveDir.Magnitude > 0 and (S.bhopSpeed or 0) > 17 and justLanded then
+                if not S.bhopBV then
+                    S.bhopBV = Instance.new("BodyVelocity")
+                    S.bhopBV.MaxForce = Vector3.new(1e5, 0, 1e5)
+                    S.bhopBV.P = 1e5
+                    S.bhopBV.Parent = hrp
+                end
+                S.bhopBV.Velocity = moveDir * math.min(S.bhopSpeed, 60)
+                if (tick() - S.bhopTimer) > 0.05 then
+                    hum.Jump = true
+                    S.bhopTimer = tick()
+                end
+            else
+                if S.bhopBV then
+                    S.bhopBV:Destroy(); S.bhopBV = nil
+                end
+                if hSpeed < 4 then S.bhopSpeed = 0 end
+            end
+        end
+    else
+        if S.bhopBV then S.bhopBV:Destroy(); S.bhopBV = nil end
+        S.bhopSpeed = 0
+        S.bhopAir = false
+    end
+
+    -- ── SilentAim target finding ─────────────
+    S.saTarget = nil
+    if (MOD.silentaim.enabled or MOD.autoshoot.enabled) then
+        local mousePos = UserInputService:GetMouseLocation()
+        local closestDist = MOD.silentaim.set.fov
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl ~= LP and pl.Character then
+                local h = pl.Character:FindFirstChildOfClass("Humanoid")
+                if h and h.Health > 0 then
+                    local head = pl.Character:FindFirstChild("Head")
+                    if head then
+                        local sp, onScr = Cam:WorldToViewportPoint(head.Position)
+                        if onScr then
+                            local dist = (Vector2.new(sp.X, sp.Y) - mousePos).Magnitude
+                            if dist < closestDist then
+                                closestDist = dist; S.saTarget = head
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if fovCircle and HAS_DRAW then
+            if MOD.silentaim.enabled and MOD.silentaim.set.showFov then
+                fovCircle.Position = mousePos
+                fovCircle.Radius   = MOD.silentaim.set.fov
+                fovCircle.Color    = S.saTarget
+                    and Color3.fromRGB(255, 70, 70)
+                    or  Color3.fromRGB(255, 255, 255)
+                fovCircle.Visible  = true
+            else
+                fovCircle.Visible = false
+            end
+        end
+    elseif fovCircle and HAS_DRAW then
+        fovCircle.Visible = false
+    end
+
+    -- ── ESP ───────────────────────────────────
+    if MOD.esp.enabled and HAS_DRAW then
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl ~= LP then
+                local d = getOrCreateESP(pl)
+                if d then
+                    local c2  = pl.Character
+                    local hrp2= c2 and c2:FindFirstChild("HumanoidRootPart")
+                    local h2  = c2 and c2:FindFirstChildOfClass("Humanoid")
+                    if hrp2 and h2 and h2.Health > 0 then
+                        local center, onScr = Cam:WorldToViewportPoint(hrp2.Position)
+                        if onScr then
+                            local topSP, _ = Cam:WorldToViewportPoint(hrp2.Position + Vector3.new(0, 3.2, 0))
+                            local bH = math.abs(topSP.Y - center.Y) * 2
+                            local bW = bH * 0.5
+                            local col = isMurd(pl) and Color3.fromRGB(255, 60, 60)
+                                or (isSher(pl) and Color3.fromRGB(60, 120, 255)
+                                or Color3.fromRGB(220, 220, 220))
+                            local role = isMurd(pl) and " [M]" or (isSher(pl) and " [S]" or "")
+                            d.box.Color = col; d.box.Visible = true
+                            d.box.Size = Vector2.new(bW, bH)
+                            d.box.Position = Vector2.new(center.X - bW/2, topSP.Y)
+                            d.name.Text = pl.Name .. role
+                            d.name.Color = col; d.name.Visible = true
+                            d.name.Position = Vector2.new(center.X, topSP.Y - 15)
+                        else
+                            d.box.Visible = false; d.name.Visible = false
+                        end
+                    else
+                        d.box.Visible = false; d.name.Visible = false
+                    end
+                end
+            end
+        end
+    else
+        for _, d in pairs(espData) do
+            if d.box  then d.box.Visible  = false end
+            if d.name then d.name.Visible = false end
+        end
+    end
+
+    -- ── ShootTrails ───────────────────────────
+    updateTrails()
+
+    -- ── CsPov viewmodel ───────────────────────
+    if MOD.cspov.enabled and vmFrame.Visible then
+        updateVMBob(dt)
+    end
+
+    -- ── Watermark ────────────────────────────
+    if MOD.watermark.enabled and wmFrame.Visible then
+        local ping = 0
+        pcall(function() ping = math.floor(LP:GetNetworkPing() * 1000) end)
+        wmStatsLbl.Text = string.format("%d FPS  |  %dms", S.fps, ping)
+    end
+
+    -- ── Speed HUD ────────────────────────────
+    if MOD.speedhud.enabled and speedFrame.Visible and hrp then
+        local hVel = hrp.Velocity * Vector3.new(1, 0, 1)
+        speedVal.Text = tostring(math.floor(hVel.Magnitude))
+    end
+end)
+
+-- ═══════════════════════════════════════════
+--            INPUT  HANDLER
+-- ═══════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.Insert then
+        toggleMenu()
+    elseif inp.KeyCode == Enum.KeyCode.F then
+        if MOD.cspov.enabled then doInspect() end
+    end
+end)
+
+-- ═══════════════════════════════════════════
+print(string.rep("=", 44))
+print("  WOQUED v1.6 loaded!")
+print("  Mobile mode: " .. tostring(MOBILE))
+print("  Window: " .. WW .. " x " .. WH)
+print("  Tap W button or [Insert] to open")
+print("  CsPov: full-screen hands + butterfly knife (+ AWP on AntiAim)")
+print("  Emote: Rampage Dance (локально, поверх движения; при AA — только спин)")
+print("  Knife: бабочка из тулбокса, если загрузилась (иначе процедурная)")
+print("  Inspect: [F] key or the knife button")
+print(string.rep("=", 44))
